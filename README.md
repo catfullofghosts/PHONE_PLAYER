@@ -1,3 +1,6 @@
+# HACKED VERSION OF pi_video_looper2 to play back audio clips form payphone (not tested with final keypad yet)
+
+
 # pi_video_looper2
 This is a forked & updated version of the original project [pi_video_looper](https://github.com/adafruit/pi_video_looper). It aims to support Raspberry Pi 4 & 5 and the latest Raspberry Pi OS.
 
