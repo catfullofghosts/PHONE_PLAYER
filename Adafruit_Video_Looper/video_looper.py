@@ -269,7 +269,15 @@ class VideoLooper:
             if not os.path.exists(path) or not os.path.isdir(path):
                 continue
 
-            for x in os.listdir(path):
+            # Skip unreadable paths (e.g. stale mount folders left behind by
+            # an unclean USB removal) instead of crashing.
+            try:
+                dir_entries = os.listdir(path)
+            except (PermissionError, OSError) as err:
+                self._print(f'Skipping unreadable path {path}: {err}')
+                continue
+
+            for x in dir_entries:
                 # Ignore hidden files (useful when file loaded on usb key from an OSX computer
                 if (
                     x[0] != '.'
@@ -303,7 +311,11 @@ class VideoLooper:
         for path in self._reader.search_paths():
             if not os.path.isdir(path):
                 continue
-            for filename in os.listdir(path):
+            try:
+                dir_entries = os.listdir(path)
+            except (PermissionError, OSError):
+                continue
+            for filename in dir_entries:
                 if filename.lower() == self._idle_tone_filename.lower():
                     target = os.path.join(path, filename)
                     return Movie(target, os.path.splitext(filename)[0])

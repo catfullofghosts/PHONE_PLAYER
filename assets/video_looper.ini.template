@@ -272,9 +272,11 @@ audio_only = false
 #audio_only = true
 
 # ALSA output used in audio-only mode. The Pi analog headphone jack is normally
-# hw:0,0; HDMI is normally hw:1,0. Run `aplay -l` to confirm.
+# card 0; HDMI is normally card 1. Run `aplay -l` to confirm.
+# Prefer plughw over hw: it adds format conversion and buffering that
+# prevents "cannot estimate delay / broken pipe" underrun errors.
 audio_device =
-#audio_device = hw:0,0
+#audio_device = plughw:0,0
 
 # image player configuration follows
 [image_player]
