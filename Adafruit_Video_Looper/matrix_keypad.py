@@ -7,14 +7,14 @@ import time
 
 import digitalio
 
-from .gpio_pins import board_pin_to_blinka, parse_board_pin_list, parse_keypad_pins
+from .gpio_pins import bcm_to_blinka, parse_board_pin_list, parse_keypad_pins
 
 # Standard telephone keypad layout (4 rows x 3 columns).
 KEY_MAP = [
     ["1", "2", "3"],
     ["4", "5", "6"],
     ["7", "8", "9"],
-    ["star", "0", "hash"],
+    ["X", "0", "#"],
 ]
 
 
@@ -32,20 +32,20 @@ class MatrixKeypad:
 
         self._rows = []
         for pin in row_pins:
-            row = digitalio.DigitalInOut(board_pin_to_blinka(pin))
+            row = digitalio.DigitalInOut(bcm_to_blinka(pin))
             row.direction = digitalio.Direction.OUTPUT
             row.value = True
             self._rows.append(row)
 
         self._cols = []
         for pin in col_pins:
-            col = digitalio.DigitalInOut(board_pin_to_blinka(pin))
+            col = digitalio.DigitalInOut(bcm_to_blinka(pin))
             col.direction = digitalio.Direction.INPUT
             col.pull = digitalio.Pull.UP
             self._cols.append(col)
 
         self._last_key = None
-        self._last_press_time = 0.0
+        self._release_started = None
 
     def _scan_raw(self):
         """Return the key currently held down, or None if nothing is pressed."""
@@ -66,14 +66,24 @@ class MatrixKeypad:
         now = time.monotonic()
 
         if key is None:
-            self._last_key = None
+            # Require a stable release before arming the next press. This
+            # prevents contact bounce from looking like a second press.
+            if self._last_key is not None:
+                if self._release_started is None:
+                    self._release_started = now
+                elif now - self._release_started >= self._debounce_ms:
+                    self._last_key = None
+                    self._release_started = None
             return None
 
-        if key == self._last_key and (now - self._last_press_time) < self._debounce_ms:
+        if self._last_key is not None:
+            # A held key emits only one event. Ignore other detections until
+            # the original key has been fully released.
+            self._release_started = None
             return None
 
         self._last_key = key
-        self._last_press_time = now
+        self._release_started = None
         return key
 
     def wait_scan_interval(self):

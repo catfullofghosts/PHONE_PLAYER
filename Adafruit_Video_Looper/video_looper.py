@@ -143,6 +143,12 @@ class VideoLooper:
             self._pinMap = None
 
         self._keypad = None
+        self._idle_tone_filename = self._config.get(
+            'keypad', 'idle_tone', fallback=''
+        ).strip()
+        self._idle_tone_movie = None
+        self._pending_key_movie = None
+        self._playing_idle_tone = False
         if self._config.getboolean('keypad', 'enabled', fallback=False):
             try:
                 self._keypad = create_keypad(self._config)
@@ -265,7 +271,11 @@ class VideoLooper:
 
             for x in os.listdir(path):
                 # Ignore hidden files (useful when file loaded on usb key from an OSX computer
-                if x[0] != '.' and re.search('\.({0})$'.format(self._extensions), x, flags=re.IGNORECASE):
+                if (
+                    x[0] != '.'
+                    and x.lower() != self._idle_tone_filename.lower()
+                    and re.search(r'\.({0})$'.format(self._extensions), x, flags=re.IGNORECASE)
+                ):
                     repeatsetting = re.search('_repeat_([0-9]*)x', x, flags=re.IGNORECASE)
                     if (repeatsetting is not None):
                         repeat = repeatsetting.group(1)
@@ -284,6 +294,20 @@ class VideoLooper:
 
         # Create a playlist with the sorted list of movies.
         return Playlist(sorted(movies))
+
+    def _find_idle_tone(self):
+        """Find the configured idle tone on the current media drive."""
+        if not self._idle_tone_filename:
+            return None
+
+        for path in self._reader.search_paths():
+            if not os.path.isdir(path):
+                continue
+            for filename in os.listdir(path):
+                if filename.lower() == self._idle_tone_filename.lower():
+                    target = os.path.join(path, filename)
+                    return Movie(target, os.path.splitext(filename)[0])
+        return None
 
     def _blank_screen(self):
         """Render a blank screen filled with the background color and optional the background image."""
@@ -511,13 +535,39 @@ class VideoLooper:
 
         self._print(f'Keypad pressed: {key}')
 
+        if key in ('X', '#'):
+            self._print(f'Auxiliary key {key} pressed (no action)')
+            return
+
         if self._playlist is None or self._playlist.find_by_key(key) is None:
             self._print(f'No media file found for key: {key}')
             return
 
-        self._playlist.set_next(key)
+        self._pending_key_movie = self._playlist.find_by_key(key)
         self._player.stop(3)
-        self._playbackStopped = False
+        self._playing_idle_tone = False
+        self._print(f'Queued key {key}: {self._pending_key_movie.filename}')
+
+    def _update_keypad_playback(self):
+        """Run interruptible key playback with an optional looping idle tone."""
+        if self._keypad is None or self._player.is_playing():
+            return
+
+        if self._pending_key_movie is not None:
+            movie = self._pending_key_movie
+            self._pending_key_movie = None
+            self._playing_idle_tone = False
+            self._print(f'Playing key clip: {movie.filename}')
+            self._player.play(movie, loop=None, vol=self._sound_vol)
+            return
+
+        if self._idle_tone_movie is not None:
+            # Restart the tone whenever playback is idle; only log the first start
+            # so the debug log is not flooded on every loop restart.
+            if not self._playing_idle_tone:
+                self._print(f'Playing idle tone: {self._idle_tone_movie.filename}')
+                self._playing_idle_tone = True
+            self._player.play(self._idle_tone_movie, loop=-1, vol=self._sound_vol)
     
     def _gpio_setup(self):
         if self._pinMap is None:
@@ -540,13 +590,14 @@ class VideoLooper:
         """Main program loop.  Will never return!"""
         # Get playlist of movies to play from file reader.
         self._playlist = self._build_playlist()
+        self._idle_tone_movie = self._find_idle_tone()
         self._prepare_to_run_playlist(self._playlist)
         self._set_hardware_volume()
         movie = self._playlist.get_next(self._is_random, self._resume_playlist)
         # Main loop to play videos in the playlist and listen for file changes.
         while self._running:
             # Load and play a new movie if nothing is playing.
-            if not self._player.is_playing() and not self._playbackStopped:
+            if self._keypad is None and not self._player.is_playing() and not self._playbackStopped:
                 if movie is not None: #just to avoid errors
 
                     if movie.playcount >= movie.repeats:
@@ -596,8 +647,7 @@ class VideoLooper:
             # Check for changes in the file search path (like USB drives added)
             # and rebuild the playlist.
             reader_changed = self._reader.is_changed()
-            keypad_idle = self._keypad is not None and not self._player.is_playing()
-            if reader_changed and (not self._playbackStopped or keypad_idle):
+            if reader_changed and (not self._playbackStopped or self._keypad is not None):
                 self._print("reader changed, stopping player")
                 self._player.stop(3)  # Up to 3 second delay waiting for old 
                                       # player to stop.
@@ -610,6 +660,9 @@ class VideoLooper:
                     # wait a second for drive to be fully mounted and readable.
                     time.sleep(1)
                     self._playlist = self._build_playlist()
+                self._idle_tone_movie = self._find_idle_tone()
+                self._pending_key_movie = None
+                self._playing_idle_tone = False
 
                 #refresh background image
                 if self._copyloader:
@@ -623,6 +676,7 @@ class VideoLooper:
 
             # process matrix keypad inputs (always active, even during playback)
             self._handle_keypad_control()
+            self._update_keypad_playback()
             
             # Give the CPU some time to do other tasks. low values increase "responsiveness to changes" and reduce the pause between files
             # but increase CPU usage

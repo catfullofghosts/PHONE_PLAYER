@@ -20,11 +20,17 @@ class VLCPlayer:
         """
         self._process = None
         self._temp_directory = None
-        self._vlc_instance = vlc.Instance()
+        self._load_config(config)
+
+        vlc_options = []
+        if self._audio_only:
+            vlc_options.extend(("--no-video", "--aout=alsa"))
+            if self._audio_device:
+                vlc_options.append(f"--alsa-audio-device={self._audio_device}")
+
+        self._vlc_instance = vlc.Instance(*vlc_options)
         self._video_player = self._vlc_instance.media_player_new()
         self._video_directory = config.get("directory", "path")
-
-        self._load_config(config)
 
         if not self._audio_only:
             # set the player into pygame's window so that
@@ -48,6 +54,7 @@ class VLCPlayer:
         else:
             self._extensions = "avi, mov, mkv, mp4, m4v".split(", ")
         self._audio_only = config.getboolean('vlcplayer', 'audio_only', fallback=False)
+        self._audio_device = config.get('vlcplayer', 'audio_device', fallback='')
 
     def supported_extensions(self):
         """Return list of supported file extensions."""
@@ -58,11 +65,20 @@ class VLCPlayer:
         media = self._vlc_instance.media_new(movie.target)
         if self._audio_only:
             media.add_option(':no-video')
+        if loop == -1:
+            # VLC repeats the input this many extra times; -1 does not mean
+            # infinite here, so use a very large count instead.
+            media.add_option(':input-repeat=1000000')
         self._video_player.set_media(media)
         self._video_player.play()
 
-        # wait until the video starts
-        while not self._video_player.is_playing():
+        # Wait briefly for playback to begin, but do not hang the keypad scanner
+        # forever if the file is invalid or the audio device is unavailable.
+        deadline = time.monotonic() + 5
+        while not self._video_player.is_playing() and time.monotonic() < deadline:
+            state = self._video_player.get_state()
+            if state in (vlc.State.Error, vlc.State.Ended):
+                break
             time.sleep(0.1)
 
     def pause(self):

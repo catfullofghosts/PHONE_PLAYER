@@ -153,31 +153,36 @@ gpio_control_disabled_while_playback = false
 #gpio_control_disabled_while_playback = true
 
 # Matrix keypad control (e.g. pay-phone keypad)
-# Wire a 3x4 matrix keypad to the Pi. Pins use physical BOARD header numbering.
-#
-# Preferred: one ordered list matching your keypad silkscreen / wire order:
-#   r4, r3, r2, r1, c3, c2, c1
-# Rows are top-to-bottom on the keypad; columns are listed right-to-left (c3..c1).
-# Each entry can be a BOARD number or a labeled pin, e.g. r4:16
+# Preferred pin list order: r4, r3, r2, r1, c3, c2, c1
+# Use BCM GPIO names (gpio12) or BOARD header numbers (32).
 #
 # Key layout (top to bottom, left to right):
 #   1  2  3
 #   4  5  6
 #   7  8  9
-#   *  0  #
+#   X  0  #
 #
 # Name media files on the USB drive to match the key labels:
-#   1.mp4, 2.mp4, ... 9.mp4, star.mp4, 0.mp4, hash.mp4
+#   1.wav, 2.wav, ... 9.wav, 0.wav
+# X and # are detected and logged but intentionally perform no action.
 [keypad]
 enabled = false
 #enabled = true
-# Single ordered pin list (replace BOARD numbers when wiring is final):
-#pins = r4:16, r3:18, r2:22, r1:11, c3:29, c2:31, c1:36
-# Or numbers only, same order:
-#pins = 16, 18, 22, 11, 29, 31, 36
-# Alternative: separate lists (rows r4..r1, columns c1..c3 left-to-right):
-#row_pins = 11, 13, 15, 16
-#col_pins = 36, 31, 29
+# Pay-phone wiring (keypad pin / colour / BCM):
+#   r1 pin7 blue   gpio26
+#   r2 pin6 yellow gpio19
+#   r3 pin2 black  gpio12
+#   r4 pin3 brown  gpio27
+#   c1 pin8 green  gpio21
+#   c2 pin5 white  gpio13
+#   c3 pin4 orange gpio22
+pins = r4:gpio27, r3:gpio12, r2:gpio19, r1:gpio26, c3:gpio22, c2:gpio13, c1:gpio21
+# Alternative: separate lists (rows r1..r4, columns c1..c3 left-to-right):
+#row_pins = gpio26, gpio19, gpio12, gpio27
+#col_pins = gpio21, gpio13, gpio22
+# Optional file that loops while waiting for a key. A keypress interrupts it;
+# after the selected clip finishes, the idle tone resumes.
+idle_tone = tone.wav
 debounce_ms = 200
 scan_interval_ms = 10
 
@@ -260,11 +265,16 @@ hw_vol_file =
 hw_vol_control = Master
 
 [vlcplayer]
-extensions = avi, mov, mkv, mp4, m4v
+extensions = avi, mov, mkv, mp4, m4v, wav, mp3, m4a, aac, flac, ogg
 
 # Play audio only — video track is ignored (useful when no display is connected)
 audio_only = false
 #audio_only = true
+
+# ALSA output used in audio-only mode. The Pi analog headphone jack is normally
+# hw:0,0; HDMI is normally hw:1,0. Run `aplay -l` to confirm.
+audio_device =
+#audio_device = hw:0,0
 
 # image player configuration follows
 [image_player]
